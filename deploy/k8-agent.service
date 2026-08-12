@@ -1,0 +1,16 @@
+[Unit]
+Description=k8 node agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Environment=K8_NODE_ID=pi-0
+Environment=K8_CPU=1000
+Environment=K8_MEMORY=2048
+Environment=K8_LABELS=tier=general
+ExecStart=/usr/local/bin/k8-agent -node-id $K8_NODE_ID -cpu $K8_CPU -memory $K8_MEMORY -labels $K8_LABELS -server http://controller.local:8080
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

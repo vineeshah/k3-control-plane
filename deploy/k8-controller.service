@@ -1,0 +1,12 @@
+[Unit]
+Description=k8 control plane
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/k8-controller -listen :8080 -reconcile-interval 2s -node-timeout 10s
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,10 +1,6 @@
 package client
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -30,8 +26,16 @@ func (c *Client) ApplyService(service api.Service) error {
 	return c.postJSON("/services", service, nil)
 }
 
+func (c *Client) DeleteService(name string) error {
+	return c.do(http.MethodDelete, "/services/"+name, nil, nil)
+}
+
 func (c *Client) ApplyJob(job api.Job) error {
 	return c.postJSON("/jobs", job, nil)
+}
+
+func (c *Client) DeleteJob(name string) error {
+	return c.do(http.MethodDelete, "/jobs/"+name, nil, nil)
 }
 
 func (c *Client) RegisterNode(node api.Node) error {
@@ -68,52 +72,4 @@ func (c *Client) FetchState() (api.StateSnapshot, error) {
 	var snapshot api.StateSnapshot
 	err := c.getJSON("/state", &snapshot)
 	return snapshot, err
-}
-
-func (c *Client) postJSON(path string, payload any, out any) error {
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, c.baseURL+path, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		return decodeHTTPError(resp)
-	}
-	if out != nil {
-		return json.NewDecoder(resp.Body).Decode(out)
-	}
-	return nil
-}
-
-func (c *Client) getJSON(path string, out any) error {
-	resp, err := c.httpClient.Get(c.baseURL + path)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		return decodeHTTPError(resp)
-	}
-	return json.NewDecoder(resp.Body).Decode(out)
-}
-
-func decodeHTTPError(resp *http.Response) error {
-	body, _ := io.ReadAll(resp.Body)
-	if len(body) == 0 {
-		return fmt.Errorf("unexpected status %d", resp.StatusCode)
-	}
-	return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 }

@@ -1,0 +1,4 @@
+bin/
+.gocache/
+.DS_Store
+the_hard_way/
