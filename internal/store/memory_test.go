@@ -152,3 +152,21 @@ func TestListAssignmentsForOwnerFilters(t *testing.T) {
 		t.Fatalf("expected only a1 for service/svc, got %v", list)
 	}
 }
+
+func TestUpdateAssignmentStatusIgnoresTransitionOutOfTerminal(t *testing.T) {
+	s := NewMemoryStore()
+	now := time.Now().UTC()
+	s.SaveAssignment(api.Assignment{ID: "a1", Phase: api.AssignmentPhaseRunning, CreatedAt: now})
+
+	s.UpdateAssignmentStatus("a1", api.AssignmentPhaseLost, "node gone", now.Add(time.Second))
+	a, ok := s.UpdateAssignmentStatus("a1", api.AssignmentPhaseRunning, "late report", now.Add(2*time.Second))
+	if !ok {
+		t.Fatal("expected ok=true for existing assignment")
+	}
+	if a.Phase != api.AssignmentPhaseLost {
+		t.Fatalf("terminal phase must be sticky: expected Lost, got %s", a.Phase)
+	}
+	if a.StatusMessage != "node gone" {
+		t.Fatalf("expected original message kept, got %q", a.StatusMessage)
+	}
+}

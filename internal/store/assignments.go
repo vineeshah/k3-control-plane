@@ -31,6 +31,11 @@ func (s *MemoryStore) UpdateAssignmentStatus(id string, phase api.AssignmentPhas
 	if !ok {
 		return api.Assignment{}, false
 	}
+	// Terminal phases are final. A late report from an agent (e.g. one that
+	// was partitioned and marked Lost) must not resurrect the assignment.
+	if api.IsTerminalPhase(assignment.Phase) {
+		return assignment.Clone(), true
+	}
 	assignment.Phase = phase
 	assignment.StatusMessage = message
 	if phase == api.AssignmentPhaseRunning && assignment.StartedAt == nil {

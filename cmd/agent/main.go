@@ -24,7 +24,7 @@ func main() {
 	labels := flag.String("labels", "", "comma-separated key=value node labels")
 	heartbeatInterval := flag.Duration("heartbeat-interval", 2*time.Second, "heartbeat cadence")
 	pollInterval := flag.Duration("poll-interval", 2*time.Second, "assignment poll cadence")
-	jobDuration := flag.Duration("fake-job-duration", 2*time.Second, "how long fake jobs take to complete")
+	jobDuration := flag.Duration("sim-job-duration", 2*time.Second, "how long simulated jobs take to complete")
 	flag.Parse()
 
 	node := api.Node{
@@ -37,7 +37,7 @@ func main() {
 	}
 
 	client := client.New(*serverURL)
-	executor := engineruntime.NewFakeExecutor(*jobDuration)
+	executor := engineruntime.NewSimExecutor(*jobDuration)
 	agent := agent.New(node, client, executor, *heartbeatInterval, *pollInterval)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

@@ -2,7 +2,7 @@ package api
 
 func IsTerminalPhase(phase AssignmentPhase) bool {
 	switch phase {
-	case AssignmentPhaseSucceeded, AssignmentPhaseFailed, AssignmentPhaseStopped:
+	case AssignmentPhaseSucceeded, AssignmentPhaseFailed, AssignmentPhaseStopped, AssignmentPhaseLost:
 		return true
 	default:
 		return false

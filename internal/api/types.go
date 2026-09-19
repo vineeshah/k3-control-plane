@@ -17,6 +17,9 @@ const (
 	AssignmentPhaseSucceeded AssignmentPhase = "Succeeded"
 	AssignmentPhaseFailed    AssignmentPhase = "Failed"
 	AssignmentPhaseStopped   AssignmentPhase = "Stopped"
+	// AssignmentPhaseLost marks work on a node that stopped heartbeating.
+	// It is terminal: if the node comes back, its agent reaps the workload.
+	AssignmentPhaseLost AssignmentPhase = "Lost"
 )
 
 type ResourceRequirements struct {

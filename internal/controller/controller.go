@@ -32,11 +32,29 @@ func (c *Controller) Store() *store.MemoryStore {
 }
 
 func (c *Controller) Reconcile(now time.Time) {
+	c.markLostAssignments(now)
 	for _, service := range c.store.ListServices() {
 		c.reconcileService(now, service)
 	}
 	for _, job := range c.store.ListJobs() {
 		c.reconcileJob(now, job)
+	}
+}
+
+// markLostAssignments moves active work on dead nodes to Lost so the owners
+// reschedule it. Because Lost is terminal, a node that comes back is no longer
+// handed that work and its agent stops it: no duplicate replicas.
+func (c *Controller) markLostAssignments(now time.Time) {
+	liveNodes := liveNodeSet(now, c.store.ListNodes(), c.nodeTimeout)
+	for _, assignment := range c.store.ListAssignments() {
+		if !api.IsActivePhase(assignment.Phase) {
+			continue
+		}
+		if _, ok := liveNodes[assignment.NodeID]; ok {
+			continue
+		}
+		message := fmt.Sprintf("node %s stopped heartbeating", assignment.NodeID)
+		c.store.UpdateAssignmentStatus(assignment.ID, api.AssignmentPhaseLost, message, now)
 	}
 }
 

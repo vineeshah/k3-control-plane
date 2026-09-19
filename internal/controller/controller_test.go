@@ -102,3 +102,103 @@ func TestReconcileJobSchedulesRetryAfterFailure(t *testing.T) {
 		t.Fatal("expected active retry assignment to be set")
 	}
 }
+
+func TestReconcileMarksDeadNodeAssignmentsLostAndReschedules(t *testing.T) {
+	now := time.Now().UTC()
+	state := store.NewMemoryStore()
+	for _, id := range []string{"node-a", "node-b"} {
+		state.UpsertNode(api.Node{
+			ID:            id,
+			Capacity:      api.ResourceRequirements{CPU: 1000, Memory: 1024},
+			LastHeartbeat: now,
+		})
+	}
+
+	ctrl := New(state, scheduler.New(10*time.Second), 10*time.Second)
+	state.UpsertService(api.Service{
+		Name:      "web",
+		Image:     "nginx",
+		Replicas:  2,
+		Resources: api.ResourceRequirements{CPU: 100, Memory: 128},
+	})
+	ctrl.Reconcile(now)
+
+	original := state.ListAssignmentsForOwner(api.WorkloadKindService, "web")
+	if len(original) != 2 || original[0].NodeID != "node-a" || original[1].NodeID != "node-a" {
+		t.Fatalf("expected both replicas on node-a, got %+v", original)
+	}
+
+	// node-a stops heartbeating; node-b stays alive.
+	later := now.Add(30 * time.Second)
+	state.TouchNode("node-b", later)
+	ctrl.Reconcile(later)
+
+	activeOn := map[string]int{}
+	for _, assignment := range state.ListAssignmentsForOwner(api.WorkloadKindService, "web") {
+		if api.IsActivePhase(assignment.Phase) {
+			activeOn[assignment.NodeID]++
+			continue
+		}
+		if assignment.Phase != api.AssignmentPhaseLost {
+			t.Fatalf("expected inactive assignment %s to be Lost, got %s", assignment.ID, assignment.Phase)
+		}
+	}
+	if activeOn["node-b"] != 2 || activeOn["node-a"] != 0 {
+		t.Fatalf("expected 2 active replicas on node-b only, got %v", activeOn)
+	}
+
+	// node-a comes back: its old replicas must not be resurrected.
+	returned := later.Add(time.Second)
+	state.TouchNode("node-a", returned)
+	state.TouchNode("node-b", returned)
+	ctrl.Reconcile(returned)
+
+	active := 0
+	for _, assignment := range state.ListAssignmentsForOwner(api.WorkloadKindService, "web") {
+		if api.IsActivePhase(assignment.Phase) {
+			active++
+		}
+	}
+	if active != 2 {
+		t.Fatalf("expected exactly 2 active replicas after node-a returns, got %d", active)
+	}
+}
+
+func TestReconcileRetriesLostJobWithoutCountingFailure(t *testing.T) {
+	now := time.Now().UTC()
+	state := store.NewMemoryStore()
+	for _, id := range []string{"node-a", "node-b"} {
+		state.UpsertNode(api.Node{
+			ID:            id,
+			Capacity:      api.ResourceRequirements{CPU: 1000, Memory: 1024},
+			LastHeartbeat: now,
+		})
+	}
+
+	ctrl := New(state, scheduler.New(10*time.Second), 10*time.Second)
+	state.UpsertJob(api.Job{
+		Name:      "backup",
+		Image:     "alpine",
+		Retries:   0,
+		Resources: api.ResourceRequirements{CPU: 100, Memory: 128},
+	})
+	ctrl.Reconcile(now)
+
+	later := now.Add(30 * time.Second)
+	state.TouchNode("node-b", later)
+	ctrl.Reconcile(later)
+
+	jobs := state.ListJobs()
+	if jobs[0].Status.FailedAttempts != 0 {
+		t.Fatalf("a lost node is not a job failure: expected 0 failed attempts, got %d", jobs[0].Status.FailedAttempts)
+	}
+	active := jobs[0].Status.ActiveAssignmentID
+	if active == "" {
+		t.Fatal("expected job to be rescheduled after its node was lost")
+	}
+	for _, assignment := range state.ListAssignmentsForOwner(api.WorkloadKindJob, "backup") {
+		if assignment.ID == active && assignment.NodeID != "node-b" {
+			t.Fatalf("expected retry on node-b, got %s", assignment.NodeID)
+		}
+	}
+}
