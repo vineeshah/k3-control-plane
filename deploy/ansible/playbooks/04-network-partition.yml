@@ -1,0 +1,59 @@
+# A node is cut off from the network but keeps running: the split-brain case.
+#
+# Expect: the controller can't tell a partition from a crash, so after
+# node-timeout it marks the node's replicas Lost and replaces them elsewhere.
+# The isolated node keeps its copies running meanwhile (there is no fencing;
+# see README). When the partition heals, the controller no longer hands those
+# assignments out and Lost is final, so the node stops its copies and
+# the cluster ends with exactly drill_replicas.
+- name: "Drill 04: network partition"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Deploy the workload
+      ansible.builtin.include_tasks: tasks/deploy_workload.yml
+
+    - name: Start from a converged cluster
+      ansible.builtin.include_tasks: tasks/converged.yml
+
+    - name: Choose the node to isolate
+      ansible.builtin.include_tasks: tasks/pick_victim.yml
+
+    - name: Cut the node off the cluster network
+      ansible.builtin.command: docker network disconnect {{ docker_network }} k8-{{ victim }}
+      changed_when: true
+
+    - name: Controller notices the node is gone
+      ansible.builtin.include_tasks: tasks/wait_lost.yml
+
+    - name: Replicas are replaced on the reachable nodes
+      ansible.builtin.include_tasks: tasks/converged.yml
+      vars:
+        down_nodes: ["{{ victim }}"]
+
+    - name: Isolated node still runs its old copies (the split-brain window)
+      ansible.builtin.shell: >-
+        set -o pipefail;
+        ctr -n k8 tasks ls | awk 'NR > 1 && $3 == "RUNNING" { print $1 }'
+      args:
+        executable: /bin/bash
+      delegate_to: "{{ victim }}"
+      register: isolated_tasks
+      changed_when: false
+
+    - name: Show the split-brain copies
+      ansible.builtin.debug:
+        msg: "{{ victim }} still runs {{ isolated_tasks.stdout_lines }} while partitioned"
+
+    - name: Heal the partition
+      ansible.builtin.command: >-
+        docker network connect --alias {{ victim }} {{ docker_network }} k8-{{ victim }}
+      changed_when: true
+
+    - name: Old copies are reaped; exactly drill_replicas remain
+      ansible.builtin.include_tasks: tasks/converged.yml
+
+    - name: None of the Lost assignments came back
+      ansible.builtin.assert:
+        that: k8_running | selectattr('id', 'in', victim_assignments) | list | length == 0

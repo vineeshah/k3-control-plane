@@ -1,10 +1,22 @@
 [Unit]
 Description=k8 control plane
+Documentation=https://github.com/vineeshah/k3-control-plane
 After=network-online.target
 Wants=network-online.target
+# Snapshots go to the NAS; the controller still starts without it and
+# retries each interval.
+After=mnt-nas.mount
 
 [Service]
-ExecStart=/usr/local/bin/k8-controller -listen :8080 -reconcile-interval 2s -node-timeout 10s
+# Optional: K8_TOKEN=<secret> to choose the join secret instead of a random one.
+EnvironmentFile=-/etc/k8/controller.env
+ExecStart=/usr/local/bin/k8-controller \
+  -listen :6443 \
+  -data-dir /var/lib/k8 \
+  -backup-dir /mnt/nas/k8 \
+  -backup-interval 5m \
+  -reconcile-interval 2s \
+  -node-timeout 10s
 Restart=always
 RestartSec=5
 

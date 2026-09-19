@@ -1,0 +1,17 @@
+# Reads the controller's view of the cluster into `k8_state`.
+- name: Read cluster state from the controller
+  ansible.builtin.command: k8ctl state --json
+  delegate_to: node-0
+  register: k8_state_out
+  changed_when: false
+  retries: 15
+  delay: 2
+  until: k8_state_out.rc == 0
+
+- name: Parse cluster state
+  ansible.builtin.set_fact:
+    k8_state: "{{ k8_state_out.stdout | from_json }}"
+    k8_running: >-
+      {{ (k8_state_out.stdout | from_json).assignments
+         | selectattr('ownerName', 'equalto', drill_service)
+         | selectattr('phase', 'equalto', 'Running') | list }}

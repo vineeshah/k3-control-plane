@@ -1,0 +1,11 @@
+- name: Declare the drill service (idempotent upsert)
+  ansible.builtin.command: >-
+    k8ctl service create
+    -name {{ drill_service }}
+    -image {{ drill_image }}
+    -replicas {{ drill_replicas }}
+    -cpu {{ drill_cpu }}
+    -memory {{ drill_memory }}
+    -ports {{ drill_port }}
+  delegate_to: node-0
+  changed_when: true

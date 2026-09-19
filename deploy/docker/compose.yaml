@@ -1,0 +1,83 @@
+# The 3-node homelab as containers: node-0 is server + agent, node-1 and
+# node-2 are agents. Each node runs its own containerd, so workloads are real
+# containers nested inside the node. The "nas" volume stands in for the NAS
+# the controller snapshots its state to.
+#
+#   docker compose -f deploy/docker/compose.yaml up -d --build
+#   docker exec k8-node-0 k8ctl state
+
+name: k8
+
+x-node: &node
+  build:
+    context: ../..
+    dockerfile: deploy/docker/Dockerfile
+  image: k8-node:dev
+  privileged: true
+  cgroup: private
+  tmpfs:
+    - /run
+    - /tmp
+  restart: "no"
+
+services:
+  node-0:
+    <<: *node
+    container_name: k8-node-0
+    hostname: node-0
+    environment:
+      K8_ROLE: server
+      K8_NODE_ID: node-0
+      K8_JOIN_SECRET: homelab-dev-secret
+      K8_NODE_TIMEOUT: 10s
+      K8_BACKUP_INTERVAL: 30s
+      K8_CPU: "4000"
+      K8_MEMORY: "2048"
+      K8_LABELS: role=server
+    volumes:
+      - shared:/shared
+      - nas:/mnt/nas
+      - node-0-state:/var/lib/k8
+      - node-0-agent:/var/lib/k8-agent
+      - node-0-containerd:/var/lib/containerd
+
+  node-1:
+    <<: *node
+    container_name: k8-node-1
+    hostname: node-1
+    depends_on: [node-0]
+    environment:
+      K8_NODE_ID: node-1
+      K8_CPU: "4000"
+      K8_MEMORY: "2048"
+      K8_LABELS: role=worker
+    volumes:
+      - shared:/shared:ro
+      - node-1-agent:/var/lib/k8-agent
+      - node-1-containerd:/var/lib/containerd
+
+  node-2:
+    <<: *node
+    container_name: k8-node-2
+    hostname: node-2
+    depends_on: [node-0]
+    environment:
+      K8_NODE_ID: node-2
+      K8_CPU: "4000"
+      K8_MEMORY: "2048"
+      K8_LABELS: role=worker
+    volumes:
+      - shared:/shared:ro
+      - node-2-agent:/var/lib/k8-agent
+      - node-2-containerd:/var/lib/containerd
+
+volumes:
+  shared:
+  nas:
+  node-0-state:
+  node-0-agent:
+  node-0-containerd:
+  node-1-agent:
+  node-1-containerd:
+  node-2-agent:
+  node-2-containerd:

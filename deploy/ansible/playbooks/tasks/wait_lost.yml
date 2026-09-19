@@ -1,0 +1,13 @@
+# Waits until the controller has declared every assignment in `victim_assignments` Lost.
+- name: Wait for the controller to mark {{ victim }}'s replicas Lost
+  ansible.builtin.command: k8ctl state --json
+  delegate_to: node-0
+  register: lost_out
+  changed_when: false
+  delay: 2
+  retries: "{{ ((node_timeout_seconds * 3) / 2) | int + 5 }}"
+  until: >-
+    lost_out.rc == 0 and
+    ((lost_out.stdout | from_json).assignments
+      | selectattr('id', 'in', victim_assignments)
+      | selectattr('phase', 'equalto', 'Lost') | list | length) == (victim_assignments | length)

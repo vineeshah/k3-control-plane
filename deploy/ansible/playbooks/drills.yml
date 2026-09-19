@@ -1,0 +1,8 @@
+# Runs every disaster drill in order against a running cluster
+# (see cluster-up.yml). Each drill leaves the cluster converged for the next.
+- import_playbook: 01-node-failure.yml
+- import_playbook: 02-agent-restart.yml
+- import_playbook: 03-controller-restart.yml
+- import_playbook: 04-network-partition.yml
+- import_playbook: 05-state-loss.yml
+- import_playbook: 06-containerd-restart.yml

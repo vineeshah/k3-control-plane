@@ -1,0 +1,67 @@
+# The agent process crashes on a node, but the node itself is fine.
+#
+# Expect: containers belong to containerd, not the agent, so replicas keep
+# serving while the agent is down. The restarted agent re-attaches to the same
+# containers (same PIDs) instead of recreating them.
+- name: "Drill 02: agent restart"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Deploy the workload
+      ansible.builtin.include_tasks: tasks/deploy_workload.yml
+
+    - name: Start from a converged cluster
+      ansible.builtin.include_tasks: tasks/converged.yml
+
+    - name: Choose the node
+      ansible.builtin.include_tasks: tasks/pick_victim.yml
+
+    - name: Record container PIDs before
+      ansible.builtin.shell: >-
+        set -o pipefail;
+        ctr -n k8 tasks ls | awk 'NR > 1 { print $1 "=" $2 }' | sort
+      args:
+        executable: /bin/bash
+      delegate_to: "{{ victim }}"
+      register: pids_before
+      changed_when: false
+
+    - name: Hold the agent down and kill it
+      ansible.builtin.shell: touch /run/k8/hold/agent && pkill -x k8-agent
+      delegate_to: "{{ victim }}"
+      changed_when: true
+
+    - name: Replicas on {{ victim }} keep serving with no agent running
+      ansible.builtin.uri:
+        url: "http://{{ victim }}:{{ drill_port }}/"
+        status_code: 200
+      delegate_to: node-0
+
+    - name: Stay down a few seconds, well under node-timeout
+      ansible.builtin.pause:
+        seconds: "{{ (node_timeout_seconds / 2) | int }}"
+
+    - name: Release the agent
+      ansible.builtin.file:
+        path: /run/k8/hold/agent
+        state: absent
+      delegate_to: "{{ victim }}"
+
+    - name: Cluster converged
+      ansible.builtin.include_tasks: tasks/converged.yml
+
+    - name: Record container PIDs after
+      ansible.builtin.shell: >-
+        set -o pipefail;
+        ctr -n k8 tasks ls | awk 'NR > 1 { print $1 "=" $2 }' | sort
+      args:
+        executable: /bin/bash
+      delegate_to: "{{ victim }}"
+      register: pids_after
+      changed_when: false
+
+    - name: Same containers, same processes (adopted, not recreated)
+      ansible.builtin.assert:
+        that: pids_after.stdout_lines == pids_before.stdout_lines
+        fail_msg: "before={{ pids_before.stdout_lines }} after={{ pids_after.stdout_lines }}"

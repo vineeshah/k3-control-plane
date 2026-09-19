@@ -1,0 +1,43 @@
+# A whole node dies: agent, containerd and its containers all at once, like a
+# Pi losing power.
+#
+# Expect: after node-timeout its replicas are marked Lost and rescheduled onto
+# the surviving nodes. When the node comes back, it rejoins with its stored
+# certificate and reaps the containers it was running before, so the cluster
+# ends with exactly drill_replicas copies.
+- name: "Drill 01: node failure"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Deploy the workload
+      ansible.builtin.include_tasks: tasks/deploy_workload.yml
+
+    - name: Start from a converged cluster
+      ansible.builtin.include_tasks: tasks/converged.yml
+
+    - name: Choose the node to kill
+      ansible.builtin.include_tasks: tasks/pick_victim.yml
+
+    - name: Kill the node
+      ansible.builtin.command: docker kill k8-{{ victim }}
+      changed_when: true
+
+    - name: Controller notices the node is gone
+      ansible.builtin.include_tasks: tasks/wait_lost.yml
+
+    - name: Replicas are rescheduled onto the surviving nodes
+      ansible.builtin.include_tasks: tasks/converged.yml
+      vars:
+        down_nodes: ["{{ victim }}"]
+
+    - name: No replica is on the dead node
+      ansible.builtin.assert:
+        that: k8_running | selectattr('nodeId', 'equalto', victim) | list | length == 0
+
+    - name: Bring the node back
+      ansible.builtin.command: docker start k8-{{ victim }}
+      changed_when: true
+
+    - name: Returning node reaps its stale containers; exactly drill_replicas copies remain
+      ansible.builtin.include_tasks: tasks/converged.yml

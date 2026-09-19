@@ -1,0 +1,58 @@
+# The control plane goes down for longer than node-timeout, then comes back.
+#
+# Expect: workloads keep serving the whole time (the data plane doesn't depend
+# on the controller). On restart, state is read back from SQLite and startup
+# grace keeps the stale heartbeats from being read as a cluster-wide outage:
+# the same assignments stay in place, nothing is marked Lost or rescheduled.
+- name: "Drill 03: controller restart"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Deploy the workload
+      ansible.builtin.include_tasks: tasks/deploy_workload.yml
+
+    - name: Start from a converged cluster
+      ansible.builtin.include_tasks: tasks/converged.yml
+
+    - name: Remember the placement
+      ansible.builtin.set_fact:
+        before_ids: "{{ k8_running | map(attribute='id') | sort }}"
+
+    - name: Hold the controller down and kill it
+      ansible.builtin.shell: touch /run/k8/hold/controller && pkill -x k8-controller
+      delegate_to: node-0
+      changed_when: true
+
+    - name: Stay down longer than node-timeout
+      ansible.builtin.pause:
+        seconds: "{{ node_timeout_seconds * 2 }}"
+
+    - name: Every replica still serves with no control plane
+      ansible.builtin.uri:
+        url: "http://{{ item.nodeId }}:{{ drill_port }}/"
+        status_code: 200
+      delegate_to: node-0
+      loop: "{{ k8_running }}"
+      loop_control:
+        label: "{{ item.id }} on {{ item.nodeId }}"
+
+    - name: Release the controller
+      ansible.builtin.file:
+        path: /run/k8/hold/controller
+        state: absent
+      delegate_to: node-0
+
+    - name: Wait past the startup grace period
+      ansible.builtin.pause:
+        seconds: "{{ node_timeout_seconds + 5 }}"
+
+    - name: Cluster converged
+      ansible.builtin.include_tasks: tasks/converged.yml
+
+    - name: Nothing was rescheduled or marked Lost
+      ansible.builtin.assert:
+        that:
+          - (k8_running | map(attribute='id') | sort) == before_ids
+          - k8_state.assignments | selectattr('ownerName', 'equalto', drill_service) | selectattr('phase', 'equalto', 'Lost') | selectattr('id', 'in', before_ids) | list | length == 0
+        fail_msg: "before={{ before_ids }} after={{ k8_running | map(attribute='id') | sort }}"

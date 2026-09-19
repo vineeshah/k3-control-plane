@@ -1,0 +1,8 @@
+- name: Tear down the cluster and all its volumes
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Stop and remove nodes, network and volumes
+      ansible.builtin.command: docker compose -f {{ compose_file }} down -v
+      changed_when: true

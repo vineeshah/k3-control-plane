@@ -1,8 +1,9 @@
 GO ?= go
 BIN := bin
 PREFIX ?= $(HOME)/.local
+ANSIBLE := cd deploy/ansible && ansible-playbook
 
-.PHONY: build install test vet fmt clean
+.PHONY: build install test vet fmt clean cluster-up cluster-down drills drill-%
 
 build:
 	mkdir -p $(BIN)
@@ -27,3 +28,18 @@ fmt:
 
 clean:
 	rm -rf $(BIN)
+
+# 3-node cluster in Docker: node-0 (server + agent), node-1, node-2.
+cluster-up:
+	$(ANSIBLE) playbooks/cluster-up.yml
+
+cluster-down:
+	$(ANSIBLE) playbooks/cluster-down.yml
+
+# Every disaster drill, in order, against a running cluster.
+drills:
+	$(ANSIBLE) playbooks/drills.yml
+
+# One drill: make drill-01, make drill-04, ...
+drill-%:
+	$(ANSIBLE) $(patsubst deploy/ansible/%,%,$(wildcard deploy/ansible/playbooks/$*-*.yml))

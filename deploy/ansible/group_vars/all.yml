@@ -1,0 +1,19 @@
+compose_file: "{{ playbook_dir }}/../../docker/compose.yaml"
+compose_project: k8
+docker_network: "{{ compose_project }}_default"
+
+# The workload every drill deploys and then breaks. Any image works; this one
+# answers HTTP, so drills can check it is actually serving, not just "Running".
+drill_service: web
+drill_image: nginx:alpine
+drill_replicas: 2
+drill_port: 80
+drill_cpu: 100
+drill_memory: 64
+
+# Must match K8_NODE_TIMEOUT / K8_BACKUP_INTERVAL in compose.yaml.
+node_timeout_seconds: 10
+backup_interval_seconds: 30
+
+# How long convergence may take after a fault before the drill fails.
+converge_timeout_seconds: 90

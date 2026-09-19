@@ -1,0 +1,81 @@
+# The controller's database is lost (disk failure, bad SD card).
+#
+# Expect: on restart the controller finds no state.db, restores the newest
+# snapshot from the NAS and carries on. The drill service still exists and the
+# cluster converges; anything that changed after the snapshot is reconciled
+# against what the agents actually run.
+- name: "Drill 05: state loss and restore from NAS"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Deploy the workload
+      ansible.builtin.include_tasks: tasks/deploy_workload.yml
+
+    - name: Start from a converged cluster
+      ansible.builtin.include_tasks: tasks/converged.yml
+
+    - name: Note the time
+      ansible.builtin.command: date +%s
+      delegate_to: node-0
+      register: converged_at
+      changed_when: false
+
+    - name: Wait for a NAS snapshot taken after convergence
+      ansible.builtin.shell: >-
+        set -o pipefail;
+        ls -1 /mnt/nas/k8/state-*.db | tail -n 1 | xargs stat -c %Y
+      args:
+        executable: /bin/bash
+      delegate_to: node-0
+      register: latest_backup
+      changed_when: false
+      delay: 5
+      retries: "{{ ((backup_interval_seconds * 2) / 5) | int + 2 }}"
+      until: latest_backup.rc == 0 and (latest_backup.stdout | int) > (converged_at.stdout | int)
+
+    - name: Hold the controller down and kill it
+      ansible.builtin.shell: touch /run/k8/hold/controller && pkill -x k8-controller
+      delegate_to: node-0
+      changed_when: true
+
+    - name: Wait for the controller to exit
+      ansible.builtin.command: pgrep -x k8-controller
+      delegate_to: node-0
+      register: controller_pid
+      changed_when: false
+      failed_when: false
+      delay: 1
+      retries: 10
+      until: controller_pid.rc != 0
+
+    - name: Destroy the local database
+      ansible.builtin.file:
+        path: "/var/lib/k8/{{ item }}"
+        state: absent
+      loop: [state.db, state.db-wal, state.db-shm]
+      delegate_to: node-0
+
+    - name: Release the controller
+      ansible.builtin.file:
+        path: /run/k8/hold/controller
+        state: absent
+      delegate_to: node-0
+
+    - name: Controller restored from the NAS snapshot
+      ansible.builtin.command: k8ctl get services --json
+      delegate_to: node-0
+      register: services_out
+      changed_when: false
+      delay: 2
+      retries: 20
+      until: >-
+        services_out.rc == 0 and
+        (services_out.stdout | from_json | selectattr('name', 'equalto', drill_service) | list | length) == 1
+
+    - name: Wait past the startup grace period
+      ansible.builtin.pause:
+        seconds: "{{ node_timeout_seconds + 5 }}"
+
+    - name: Cluster converged on restored state
+      ansible.builtin.include_tasks: tasks/converged.yml

@@ -1,0 +1,57 @@
+# Asserts the cluster is where it was asked to be, from three angles:
+#
+#   1. controller: exactly drill_replicas replicas Running
+#   2. runtime:    on every reachable node, the running containers are exactly
+#                  the assignments the controller placed there, so no orphans
+#                  and no duplicate copies left over from a fault
+#   3. data plane: every replica answers HTTP
+#
+# Set `down_nodes` to skip nodes that are deliberately unreachable.
+
+- name: Wait for {{ drill_service }} to have {{ drill_replicas }} running replicas
+  ansible.builtin.command: k8ctl state --json
+  delegate_to: node-0
+  register: converge_out
+  changed_when: false
+  delay: 2
+  retries: "{{ (converge_timeout_seconds / 2) | int }}"
+  until: >-
+    converge_out.rc == 0 and
+    ((converge_out.stdout | from_json).assignments
+      | selectattr('ownerName', 'equalto', drill_service)
+      | selectattr('phase', 'equalto', 'Running') | list | length) == drill_replicas and
+    ((converge_out.stdout | from_json).assignments
+      | selectattr('ownerName', 'equalto', drill_service)
+      | selectattr('phase', 'equalto', 'Pending') | list | length) == 0
+
+- name: Refresh cluster state
+  ansible.builtin.include_tasks: state.yml
+
+- name: Group running replicas by node
+  ansible.builtin.set_fact:
+    expected_by_node: "{{ k8_running | groupby('nodeId') | items2dict(key_name=0, value_name=1) }}"
+
+- name: Runtime on each node matches the controller (no orphans, no duplicates)
+  ansible.builtin.shell: >-
+    set -o pipefail;
+    ctr -n k8 tasks ls | awk 'NR > 1 && $3 == "RUNNING" { print $1 }' | sort
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ item }}"
+  loop: "{{ groups['all'] | difference(down_nodes | default([])) }}"
+  register: node_tasks
+  changed_when: false
+  delay: 2
+  retries: 15
+  until: >-
+    (node_tasks.stdout_lines | select('match', drill_service ~ '-') | list)
+    == (expected_by_node[item] | default([]) | map(attribute='id') | sort | list)
+
+- name: Every replica serves HTTP
+  ansible.builtin.uri:
+    url: "http://{{ item.nodeId }}:{{ drill_port }}/"
+    status_code: 200
+  delegate_to: node-0
+  loop: "{{ k8_running }}"
+  loop_control:
+    label: "{{ item.id }} on {{ item.nodeId }}"

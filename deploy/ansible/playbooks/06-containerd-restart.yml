@@ -1,0 +1,63 @@
+# containerd crashes on a node.
+#
+# Expect: container processes are parented by their shims, not by containerd,
+# so they keep running and serving. Once containerd is back, the agent's next
+# sync sees the same containers and nothing is recreated.
+- name: "Drill 06: containerd restart"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Deploy the workload
+      ansible.builtin.include_tasks: tasks/deploy_workload.yml
+
+    - name: Start from a converged cluster
+      ansible.builtin.include_tasks: tasks/converged.yml
+
+    - name: Choose the node
+      ansible.builtin.include_tasks: tasks/pick_victim.yml
+
+    - name: Record container PIDs before
+      ansible.builtin.shell: >-
+        set -o pipefail;
+        ctr -n k8 tasks ls | awk 'NR > 1 { print $1 "=" $2 }' | sort
+      args:
+        executable: /bin/bash
+      delegate_to: "{{ victim }}"
+      register: pids_before
+      changed_when: false
+
+    - name: Hold containerd down and kill it (shims survive)
+      ansible.builtin.shell: touch /run/k8/hold/containerd && pkill -x containerd
+      delegate_to: "{{ victim }}"
+      changed_when: true
+
+    - name: Replicas keep serving without containerd
+      ansible.builtin.uri:
+        url: "http://{{ victim }}:{{ drill_port }}/"
+        status_code: 200
+      delegate_to: node-0
+
+    - name: Release containerd
+      ansible.builtin.file:
+        path: /run/k8/hold/containerd
+        state: absent
+      delegate_to: "{{ victim }}"
+
+    - name: Cluster converged
+      ansible.builtin.include_tasks: tasks/converged.yml
+
+    - name: Record container PIDs after
+      ansible.builtin.shell: >-
+        set -o pipefail;
+        ctr -n k8 tasks ls | awk 'NR > 1 { print $1 "=" $2 }' | sort
+      args:
+        executable: /bin/bash
+      delegate_to: "{{ victim }}"
+      register: pids_after
+      changed_when: false
+
+    - name: Same containers, same processes
+      ansible.builtin.assert:
+        that: pids_after.stdout_lines == pids_before.stdout_lines
+        fail_msg: "before={{ pids_before.stdout_lines }} after={{ pids_after.stdout_lines }}"

@@ -1,16 +1,31 @@
 [Unit]
 Description=k8 node agent
-After=network-online.target
+Documentation=https://github.com/vineeshah/k3-control-plane
+After=network-online.target containerd.service
 Wants=network-online.target
+Requires=containerd.service
 
 [Service]
-Environment=K8_NODE_ID=pi-0
-Environment=K8_CPU=1000
-Environment=K8_MEMORY=2048
-Environment=K8_LABELS=tier=general
-ExecStart=/usr/local/bin/k8-agent -node-id $K8_NODE_ID -cpu $K8_CPU -memory $K8_MEMORY -labels $K8_LABELS -server http://controller.local:8080
+# /etc/k8/agent.env:
+#   K8_NODE_ID=pi-1
+#   K8_CPU=4000
+#   K8_MEMORY=4096
+#   K8_LABELS=role=worker
+#   K8_TOKEN=K8<hash>::<secret>   (from /var/lib/k8/token on the server; only needed to join)
+EnvironmentFile=/etc/k8/agent.env
+ExecStart=/usr/local/bin/k8-agent \
+  -node-id ${K8_NODE_ID} \
+  -cpu ${K8_CPU} \
+  -memory ${K8_MEMORY} \
+  -labels ${K8_LABELS} \
+  -server https://node-0:6443 \
+  -data-dir /var/lib/k8-agent \
+  -runtime containerd
 Restart=always
 RestartSec=5
+# Containers belong to containerd, not to this unit: stopping or restarting
+# the agent must not kill workloads.
+KillMode=process
 
 [Install]
 WantedBy=multi-user.target

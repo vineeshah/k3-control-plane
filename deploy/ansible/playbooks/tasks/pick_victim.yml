@@ -1,0 +1,14 @@
+# Picks an agent node that currently runs a replica: the node to break.
+# The server node (node-0) is never the victim here; drills 03 and 05 target
+# the control plane explicitly.
+- name: Pick a worker node that runs a replica
+  ansible.builtin.set_fact:
+    victim: "{{ (k8_running | rejectattr('nodeId', 'equalto', 'node-0') | map(attribute='nodeId') | list)[0] }}"
+    victim_assignments: >-
+      {{ k8_running | rejectattr('nodeId', 'equalto', 'node-0')
+         | selectattr('nodeId', 'equalto', (k8_running | rejectattr('nodeId', 'equalto', 'node-0') | map(attribute='nodeId') | list)[0])
+         | map(attribute='id') | list }}
+
+- name: Show the victim
+  ansible.builtin.debug:
+    msg: "breaking {{ victim }}, which runs {{ victim_assignments | join(', ') }}"

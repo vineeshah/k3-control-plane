@@ -1,0 +1,22 @@
+# Nodes are the containers from deploy/docker/compose.yaml, reached with
+# `docker exec`. Fault injection that happens outside a node (killing it,
+# cutting its network) runs on localhost against the docker CLI.
+#
+# The connection is set per group, not under `all`: implicit localhost reads
+# `all` vars too and must keep its local connection.
+all:
+  children:
+    server:
+      vars:
+        ansible_connection: community.docker.docker
+      hosts:
+        node-0:
+          ansible_host: k8-node-0
+    agents:
+      vars:
+        ansible_connection: community.docker.docker
+      hosts:
+        node-1:
+          ansible_host: k8-node-1
+        node-2:
+          ansible_host: k8-node-2

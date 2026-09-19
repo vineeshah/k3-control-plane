@@ -238,7 +238,22 @@ func (e *ContainerdExecutor) attach(ctx context.Context, assignment api.Assignme
 }
 
 func (e *ContainerdExecutor) watchExit(assignment api.Assignment, exitCh <-chan containerd.ExitStatus) {
-	exit := <-exitCh
+	var code uint32
+	for {
+		exit := <-exitCh
+		var err error
+		code, _, err = exit.Result()
+		if err == nil {
+			break
+		}
+		// The wait stream broke, which means containerd restarted, not that
+		// the container exited: its shim keeps it running. Re-subscribe
+		// rather than failing a healthy workload.
+		log.Printf("assignment %s: lost wait on containerd (%v), re-subscribing", assignment.ID, err)
+		if exitCh = e.rewait(assignment.ID); exitCh == nil {
+			return
+		}
+	}
 
 	e.mu.Lock()
 	w, ok := e.watching[assignment.ID]
@@ -249,10 +264,7 @@ func (e *ContainerdExecutor) watchExit(assignment api.Assignment, exitCh <-chan 
 		return
 	}
 
-	code, _, err := exit.Result()
 	switch {
-	case err != nil:
-		e.reportFor(assignment.ID, api.AssignmentPhaseFailed, fmt.Sprintf("wait failed: %v", err))
 	case assignment.OwnerKind == api.WorkloadKindJob && code == 0:
 		e.reportFor(assignment.ID, api.AssignmentPhaseSucceeded, "exited with code 0")
 	case assignment.OwnerKind == api.WorkloadKindJob:
@@ -264,6 +276,47 @@ func (e *ContainerdExecutor) watchExit(assignment api.Assignment, exitCh <-chan 
 	}
 	// The exited container is kept until the agent reaps it with Stop, so a
 	// restarted agent can still read the result.
+}
+
+// rewait waits for containerd to come back and returns a fresh exit channel
+// for the assignment's task, or nil once the assignment is being stopped or
+// no longer exists (in which case someone else owns reporting).
+func (e *ContainerdExecutor) rewait(id string) <-chan containerd.ExitStatus {
+	backoff := time.Second
+	for {
+		e.mu.Lock()
+		w, ok := e.watching[id]
+		stopping := ok && w.stopping
+		e.mu.Unlock()
+		if !ok || stopping {
+			return nil
+		}
+
+		ctx := e.ctx()
+		container, err := e.client.LoadContainer(ctx, id)
+		if errdefs.IsNotFound(err) {
+			return nil
+		}
+		if err == nil {
+			var task containerd.Task
+			task, err = container.Task(ctx, nil)
+			if errdefs.IsNotFound(err) {
+				e.reportFor(id, api.AssignmentPhaseFailed, "task disappeared while containerd was down")
+				return nil
+			}
+			if err == nil {
+				var exitCh <-chan containerd.ExitStatus
+				if exitCh, err = task.Wait(ctx); err == nil {
+					return exitCh
+				}
+			}
+		}
+		log.Printf("assignment %s: containerd not ready (%v), retrying in %s", id, err, backoff)
+		time.Sleep(backoff)
+		if backoff < 10*time.Second {
+			backoff *= 2
+		}
+	}
 }
 
 // Stop sends SIGTERM, escalates to SIGKILL after the grace period, then
