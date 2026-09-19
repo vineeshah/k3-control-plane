@@ -39,7 +39,7 @@ func (c *Controller) reconcileService(now time.Time, service api.Service) {
 	}
 
 	for len(active) < service.Replicas {
-		nodeID, err := c.scheduler.ChooseNode(now, c.store.ListNodes(), c.store.ListAssignments(), service.Resources, service.Placement)
+		nodeID, err := c.scheduler.ChooseNode(now, c.store.ListNodes(), c.store.ListAssignments(), service.Resources, service.Placement, service.Ports)
 		if err != nil {
 			break
 		}
@@ -53,6 +53,7 @@ func (c *Controller) reconcileService(now time.Time, service api.Service) {
 			Env:       service.Env,
 			Resources: service.Resources,
 			Volumes:   service.Volumes,
+			Ports:     service.Ports,
 			Attempt:   1,
 			Phase:     api.AssignmentPhasePending,
 			CreatedAt: now,

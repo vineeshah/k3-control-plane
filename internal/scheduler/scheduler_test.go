@@ -24,7 +24,7 @@ func TestChooseNodePrefersDeterministicSmallestIDWhenAllElseEqual(t *testing.T) 
 		},
 	}
 
-	nodeID, err := scheduler.ChooseNode(now, nodes, nil, api.ResourceRequirements{CPU: 100, Memory: 128}, api.Placement{})
+	nodeID, err := scheduler.ChooseNode(now, nodes, nil, api.ResourceRequirements{CPU: 100, Memory: 128}, api.Placement{}, nil)
 	if err != nil {
 		t.Fatalf("ChooseNode returned error: %v", err)
 	}
@@ -63,14 +63,14 @@ func TestChooseNodeRespectsPlacementAndResources(t *testing.T) {
 
 	_, err := scheduler.ChooseNode(now, nodes, assignments, api.ResourceRequirements{CPU: 100, Memory: 128}, api.Placement{
 		RequiredLabels: map[string]string{"tier": "batch"},
-	})
+	}, nil)
 	if err == nil {
 		t.Fatal("expected no eligible node because the only matching node is full")
 	}
 
 	nodeID, err := scheduler.ChooseNode(now, nodes, assignments, api.ResourceRequirements{CPU: 100, Memory: 128}, api.Placement{
 		RequiredLabels: map[string]string{"tier": "general"},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("ChooseNode returned error: %v", err)
 	}

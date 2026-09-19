@@ -53,7 +53,10 @@ type Service struct {
 	Resources ResourceRequirements `json:"resources"`
 	Placement Placement            `json:"placement,omitempty"`
 	Volumes   []Volume             `json:"volumes,omitempty"`
-	Status    ServiceStatus        `json:"status"`
+	// Ports the service listens on. Workloads use host networking, so these
+	// are node ports: no two replicas that share a port land on one node.
+	Ports  []int         `json:"ports,omitempty"`
+	Status ServiceStatus `json:"status"`
 }
 
 type ServiceStatus struct {
@@ -95,6 +98,7 @@ type Assignment struct {
 	Env           map[string]string    `json:"env,omitempty"`
 	Resources     ResourceRequirements `json:"resources"`
 	Volumes       []Volume             `json:"volumes,omitempty"`
+	Ports         []int                `json:"ports,omitempty"`
 	Attempt       int                  `json:"attempt"`
 	Phase         AssignmentPhase      `json:"phase"`
 	StatusMessage string               `json:"statusMessage,omitempty"`

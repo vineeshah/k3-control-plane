@@ -59,7 +59,7 @@ func (c *Controller) reconcileJob(now time.Time, job api.Job) {
 		return
 	}
 
-	nodeID, err := c.scheduler.ChooseNode(now, c.store.ListNodes(), c.store.ListAssignments(), job.Resources, job.Placement)
+	nodeID, err := c.scheduler.ChooseNode(now, c.store.ListNodes(), c.store.ListAssignments(), job.Resources, job.Placement, nil)
 	if err != nil {
 		c.store.UpdateJobStatus(job.Name, status)
 		return

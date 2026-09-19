@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -24,6 +25,21 @@ func parseMap(input string) map[string]string {
 		values[parts[0]] = parts[1]
 	}
 	return values
+}
+
+func parsePorts(input string) ([]int, error) {
+	if strings.TrimSpace(input) == "" {
+		return nil, nil
+	}
+	var ports []int
+	for _, raw := range strings.Split(input, ",") {
+		port, err := strconv.Atoi(strings.TrimSpace(raw))
+		if err != nil || port < 1 || port > 65535 {
+			return nil, fmt.Errorf("invalid port %q", raw)
+		}
+		ports = append(ports, port)
+	}
+	return ports, nil
 }
 
 func splitCommand(input string) []string {

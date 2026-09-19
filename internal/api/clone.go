@@ -21,6 +21,7 @@ func (s Service) Clone() Service {
 		Resources: s.Resources,
 		Placement: Placement{RequiredLabels: cloneStringMap(s.Placement.RequiredLabels)},
 		Volumes:   cloneVolumes(s.Volumes),
+		Ports:     cloneInts(s.Ports),
 		Status: ServiceStatus{
 			DesiredReplicas:    s.Status.DesiredReplicas,
 			PendingReplicas:    s.Status.PendingReplicas,
@@ -63,6 +64,7 @@ func (a Assignment) Clone() Assignment {
 		Env:           cloneStringMap(a.Env),
 		Resources:     a.Resources,
 		Volumes:       cloneVolumes(a.Volumes),
+		Ports:         cloneInts(a.Ports),
 		Attempt:       a.Attempt,
 		Phase:         a.Phase,
 		StatusMessage: a.StatusMessage,
@@ -88,6 +90,15 @@ func cloneStringSlice(in []string) []string {
 		return nil
 	}
 	out := make([]string, len(in))
+	copy(out, in)
+	return out
+}
+
+func cloneInts(in []int) []int {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]int, len(in))
 	copy(out, in)
 	return out
 }

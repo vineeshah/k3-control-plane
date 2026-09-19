@@ -24,7 +24,10 @@ func main() {
 	labels := flag.String("labels", "", "comma-separated key=value node labels")
 	heartbeatInterval := flag.Duration("heartbeat-interval", 2*time.Second, "heartbeat cadence")
 	pollInterval := flag.Duration("poll-interval", 2*time.Second, "assignment poll cadence")
-	jobDuration := flag.Duration("sim-job-duration", 2*time.Second, "how long simulated jobs take to complete")
+	runtimeName := flag.String("runtime", "containerd", "container runtime: containerd or sim")
+	containerdAddress := flag.String("containerd-address", "/run/containerd/containerd.sock", "containerd socket")
+	logDir := flag.String("log-dir", "/var/log/k8", "where container stdout/stderr is written")
+	jobDuration := flag.Duration("sim-job-duration", 2*time.Second, "how long simulated jobs take to complete (sim runtime)")
 	flag.Parse()
 
 	node := api.Node{
@@ -37,7 +40,20 @@ func main() {
 	}
 
 	client := client.New(*serverURL)
-	executor := engineruntime.NewSimExecutor(*jobDuration)
+	var executor engineruntime.Executor
+	switch *runtimeName {
+	case "containerd":
+		ctrd, err := engineruntime.NewContainerdExecutor(*containerdAddress, *logDir)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer ctrd.Close()
+		executor = ctrd
+	case "sim":
+		executor = engineruntime.NewSimExecutor(*jobDuration)
+	default:
+		log.Fatalf("unknown runtime %q (want containerd or sim)", *runtimeName)
+	}
 	agent := agent.New(node, client, executor, *heartbeatInterval, *pollInterval)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

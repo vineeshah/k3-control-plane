@@ -37,7 +37,13 @@ func runServiceCreate(args []string) {
 	memory := fs.Int("memory", 128, "memory reservation in MB")
 	env := fs.String("env", "", "comma-separated KEY=value entries")
 	labels := fs.String("labels", "", "comma-separated requiredLabel=value placement constraints")
+	ports := fs.String("ports", "", "comma-separated ports the service listens on (host network)")
 	fs.Parse(args)
+
+	parsedPorts, err := parsePorts(*ports)
+	if err != nil {
+		exitErr(err)
+	}
 
 	service := api.Service{
 		Name:     *name,
@@ -52,6 +58,7 @@ func runServiceCreate(args []string) {
 		Placement: api.Placement{
 			RequiredLabels: parseMap(*labels),
 		},
+		Ports: parsedPorts,
 	}
 
 	if err := client.New(*server).ApplyService(service); err != nil {
