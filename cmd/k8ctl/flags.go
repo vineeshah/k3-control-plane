@@ -6,10 +6,27 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"k8/internal/client"
 )
 
-func serverFlag(fs *flag.FlagSet) *string {
-	return fs.String("server", "http://127.0.0.1:8080", "controller base URL")
+func configFlag(fs *flag.FlagSet) *string {
+	return fs.String("config", defaultConfigPath(), "admin config written by the controller (also $K8_CONFIG)")
+}
+
+func defaultConfigPath() string {
+	if path := os.Getenv("K8_CONFIG"); path != "" {
+		return path
+	}
+	return "/var/lib/k8/admin.conf"
+}
+
+func connect(configPath string) *client.Client {
+	c, err := client.LoadAdminConfig(configPath)
+	if err != nil {
+		exitErr(err)
+	}
+	return c
 }
 
 func parseMap(input string) map[string]string {

@@ -98,7 +98,7 @@ func (s *HTTPServer) handleNodes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.controller.Store().ListNodes())
 }
 
-func (s *HTTPServer) handleNodeRegister(w http.ResponseWriter, r *http.Request) {
+func (s *HTTPServer) handleNodeRegister(w http.ResponseWriter, r *http.Request, caller string) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -107,8 +107,8 @@ func (s *HTTPServer) handleNodeRegister(w http.ResponseWriter, r *http.Request) 
 	if !decodeJSON(w, r, &node) {
 		return
 	}
-	if node.ID == "" {
-		http.Error(w, "node id is required", http.StatusBadRequest)
+	if node.ID != caller {
+		http.Error(w, "a node can only register itself", http.StatusForbidden)
 		return
 	}
 	node.LastHeartbeat = time.Now().UTC()
@@ -116,7 +116,7 @@ func (s *HTTPServer) handleNodeRegister(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusCreated, node)
 }
 
-func (s *HTTPServer) handleNodeHeartbeat(w http.ResponseWriter, r *http.Request) {
+func (s *HTTPServer) handleNodeHeartbeat(w http.ResponseWriter, r *http.Request, caller string) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -127,8 +127,8 @@ func (s *HTTPServer) handleNodeHeartbeat(w http.ResponseWriter, r *http.Request)
 	if !decodeJSON(w, r, &payload) {
 		return
 	}
-	if payload.ID == "" {
-		http.Error(w, "node id is required", http.StatusBadRequest)
+	if payload.ID != caller {
+		http.Error(w, "a node can only heartbeat for itself", http.StatusForbidden)
 		return
 	}
 	if !s.controller.Store().TouchNode(payload.ID, time.Now().UTC()) {
@@ -138,7 +138,7 @@ func (s *HTTPServer) handleNodeHeartbeat(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (s *HTTPServer) handleNodeAssignments(w http.ResponseWriter, r *http.Request) {
+func (s *HTTPServer) handleNodeAssignments(w http.ResponseWriter, r *http.Request, caller string) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -152,6 +152,10 @@ func (s *HTTPServer) handleNodeAssignments(w http.ResponseWriter, r *http.Reques
 		http.NotFound(w, r)
 		return
 	}
+	if trimmed != caller {
+		http.Error(w, "a node can only read its own assignments", http.StatusForbidden)
+		return
+	}
 	assignments := s.controller.Store().ListNodeAssignments(trimmed)
 	active := make([]api.Assignment, 0)
 	for _, assignment := range assignments {
@@ -162,7 +166,7 @@ func (s *HTTPServer) handleNodeAssignments(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, active)
 }
 
-func (s *HTTPServer) handleAssignmentStatus(w http.ResponseWriter, r *http.Request) {
+func (s *HTTPServer) handleAssignmentStatus(w http.ResponseWriter, r *http.Request, caller string) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -183,12 +187,40 @@ func (s *HTTPServer) handleAssignmentStatus(w http.ResponseWriter, r *http.Reque
 	if !decodeJSON(w, r, &payload) {
 		return
 	}
+	if !isAgentReportablePhase(payload.Phase) {
+		http.Error(w, "agents may report Running, Succeeded, Failed or Stopped", http.StatusBadRequest)
+		return
+	}
+	if !s.ownsAssignment(caller, trimmed) {
+		http.Error(w, "assignment not found on this node", http.StatusNotFound)
+		return
+	}
 	assignment, ok := s.controller.Store().UpdateAssignmentStatus(trimmed, payload.Phase, payload.Message, time.Now().UTC())
 	if !ok {
 		http.Error(w, "assignment not found", http.StatusNotFound)
 		return
 	}
 	writeJSON(w, http.StatusOK, assignment)
+}
+
+func (s *HTTPServer) ownsAssignment(nodeID, assignmentID string) bool {
+	for _, assignment := range s.controller.Store().ListNodeAssignments(nodeID) {
+		if assignment.ID == assignmentID {
+			return true
+		}
+	}
+	return false
+}
+
+// isAgentReportablePhase: Pending is the controller's starting point and Lost
+// is its verdict on a dead node; neither is an agent's to set.
+func isAgentReportablePhase(phase api.AssignmentPhase) bool {
+	switch phase {
+	case api.AssignmentPhaseRunning, api.AssignmentPhaseSucceeded, api.AssignmentPhaseFailed, api.AssignmentPhaseStopped:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *HTTPServer) handleState(w http.ResponseWriter, r *http.Request) {

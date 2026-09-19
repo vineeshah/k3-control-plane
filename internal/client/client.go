@@ -1,6 +1,7 @@
 package client
 
 import (
+	"crypto/tls"
 	"net/http"
 	"strings"
 	"time"
@@ -13,11 +14,15 @@ type Client struct {
 	httpClient *http.Client
 }
 
-func New(baseURL string) *Client {
+// New returns a client for the controller at baseURL. tlsConfig must trust the
+// cluster CA and carry a client certificate (see LoadAdminConfig and
+// BootstrapNode).
+func New(baseURL string, tlsConfig *tls.Config) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		httpClient: &http.Client{
-			Timeout: 5 * time.Second,
+			Timeout:   5 * time.Second,
+			Transport: &http.Transport{TLSClientConfig: tlsConfig},
 		},
 	}
 }

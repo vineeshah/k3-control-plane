@@ -5,24 +5,23 @@ import (
 	"strings"
 
 	"k8/internal/api"
-	"k8/internal/client"
 )
 
 func runGet(args []string) {
-	server := "http://127.0.0.1:8080"
+	config := defaultConfigPath()
 	asJSON := false
 	resource := ""
 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
-		case arg == "-server" || arg == "--server":
+		case arg == "-config" || arg == "--config":
 			if i+1 < len(args) {
 				i++
-				server = args[i]
+				config = args[i]
 			}
-		case strings.HasPrefix(arg, "-server=") || strings.HasPrefix(arg, "--server="):
-			server = strings.SplitN(arg, "=", 2)[1]
+		case strings.HasPrefix(arg, "-config=") || strings.HasPrefix(arg, "--config="):
+			config = strings.SplitN(arg, "=", 2)[1]
 		case arg == "-json" || arg == "--json":
 			asJSON = true
 		default:
@@ -37,7 +36,7 @@ func runGet(args []string) {
 		os.Exit(1)
 	}
 
-	state, err := client.New(server).FetchState()
+	state, err := connect(config).FetchState()
 	if err != nil {
 		exitErr(err)
 	}

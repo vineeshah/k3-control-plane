@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"k8/internal/api"
-	"k8/internal/client"
 )
 
 func runService(args []string) {
@@ -28,7 +27,7 @@ func runService(args []string) {
 
 func runServiceCreate(args []string) {
 	fs := flag.NewFlagSet("service create", flag.ExitOnError)
-	server := serverFlag(fs)
+	config := configFlag(fs)
 	name := fs.String("name", "", "service name")
 	image := fs.String("image", "", "container image")
 	command := fs.String("command", "", "space-delimited command")
@@ -61,7 +60,7 @@ func runServiceCreate(args []string) {
 		Ports: parsedPorts,
 	}
 
-	if err := client.New(*server).ApplyService(service); err != nil {
+	if err := connect(*config).ApplyService(service); err != nil {
 		exitErr(err)
 	}
 	fmt.Printf("service %q applied\n", service.Name)
@@ -69,14 +68,14 @@ func runServiceCreate(args []string) {
 
 func runServiceDelete(args []string) {
 	fs := flag.NewFlagSet("service delete", flag.ExitOnError)
-	server := serverFlag(fs)
+	config := configFlag(fs)
 	fs.Parse(args)
 
 	if fs.NArg() != 1 {
 		usage()
 		os.Exit(1)
 	}
-	if err := client.New(*server).DeleteService(fs.Arg(0)); err != nil {
+	if err := connect(*config).DeleteService(fs.Arg(0)); err != nil {
 		exitErr(err)
 	}
 	fmt.Printf("service %q deleted\n", fs.Arg(0))

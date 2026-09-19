@@ -17,7 +17,9 @@ import (
 )
 
 func main() {
-	serverURL := flag.String("server", "http://127.0.0.1:8080", "controller base URL")
+	serverURL := flag.String("server", "https://127.0.0.1:6443", "controller base URL")
+	token := flag.String("token", os.Getenv("K8_TOKEN"), "cluster join token K8<hash>::<secret>, needed on first join (also $K8_TOKEN)")
+	dataDir := flag.String("data-dir", "/var/lib/k8-agent", "where the node's certificate and key are kept")
 	nodeID := flag.String("node-id", "node-1", "node identifier")
 	cpu := flag.Int("cpu", 1000, "node cpu capacity")
 	memory := flag.Int("memory", 1024, "node memory capacity in MB")
@@ -39,7 +41,11 @@ func main() {
 		},
 	}
 
-	client := client.New(*serverURL)
+	tlsConfig, err := client.BootstrapNode(*serverURL, *token, node.ID, *dataDir)
+	if err != nil {
+		log.Fatalf("join cluster: %v", err)
+	}
+	client := client.New(*serverURL, tlsConfig)
 	var executor engineruntime.Executor
 	switch *runtimeName {
 	case "containerd":

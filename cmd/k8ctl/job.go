@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"k8/internal/api"
-	"k8/internal/client"
 )
 
 func runJob(args []string) {
@@ -28,7 +27,7 @@ func runJob(args []string) {
 
 func runJobCreate(args []string) {
 	fs := flag.NewFlagSet("job create", flag.ExitOnError)
-	server := serverFlag(fs)
+	config := configFlag(fs)
 	name := fs.String("name", "", "job name")
 	image := fs.String("image", "", "container image")
 	command := fs.String("command", "", "space-delimited command")
@@ -54,7 +53,7 @@ func runJobCreate(args []string) {
 		},
 	}
 
-	if err := client.New(*server).ApplyJob(job); err != nil {
+	if err := connect(*config).ApplyJob(job); err != nil {
 		exitErr(err)
 	}
 	fmt.Printf("job %q applied\n", job.Name)
@@ -62,14 +61,14 @@ func runJobCreate(args []string) {
 
 func runJobDelete(args []string) {
 	fs := flag.NewFlagSet("job delete", flag.ExitOnError)
-	server := serverFlag(fs)
+	config := configFlag(fs)
 	fs.Parse(args)
 
 	if fs.NArg() != 1 {
 		usage()
 		os.Exit(1)
 	}
-	if err := client.New(*server).DeleteJob(fs.Arg(0)); err != nil {
+	if err := connect(*config).DeleteJob(fs.Arg(0)); err != nil {
 		exitErr(err)
 	}
 	fmt.Printf("job %q deleted\n", fs.Arg(0))
