@@ -8,7 +8,7 @@ import (
 
 func (c *Controller) reconcileJob(now time.Time, job api.Job) {
 	assignments := c.store.ListAssignmentsForOwner(api.WorkloadKindJob, job.Name)
-	liveNodes := liveNodeSet(now, c.store.ListNodes(), c.nodeTimeout)
+	liveNodes := liveNodeSet(now, c.nodes(), c.nodeTimeout)
 
 	status := api.JobStatus{}
 	var latestTerminal *api.Assignment
@@ -59,7 +59,7 @@ func (c *Controller) reconcileJob(now time.Time, job api.Job) {
 		return
 	}
 
-	nodeID, err := c.scheduler.ChooseNode(now, c.store.ListNodes(), c.store.ListAssignments(), job.Resources, job.Placement, nil)
+	nodeID, err := c.scheduler.ChooseNode(now, c.nodes(), c.store.ListAssignments(), job.Resources, job.Placement, nil)
 	if err != nil {
 		c.store.UpdateJobStatus(job.Name, status)
 		return

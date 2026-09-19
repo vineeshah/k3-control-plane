@@ -13,6 +13,13 @@ func (s *MemoryStore) SaveAssignment(assignment api.Assignment) {
 	s.assignments[assignment.ID] = assignment.Clone()
 }
 
+func (s *MemoryStore) HasAssignment(id string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.assignments[id]
+	return ok
+}
+
 func (s *MemoryStore) DeleteAssignment(id string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -31,10 +38,18 @@ func (s *MemoryStore) UpdateAssignmentStatus(id string, phase api.AssignmentPhas
 	if !ok {
 		return api.Assignment{}, false
 	}
-	// Terminal phases are final. A late report from an agent (e.g. one that
-	// was partitioned and marked Lost) must not resurrect the assignment.
+	if applyStatus(&assignment, phase, message, now) {
+		s.assignments[id] = assignment
+	}
+	return assignment.Clone(), true
+}
+
+// applyStatus moves an assignment to phase and reports whether it changed.
+// Terminal phases are final: a late report from an agent (e.g. one that was
+// partitioned and marked Lost) must not resurrect the assignment.
+func applyStatus(assignment *api.Assignment, phase api.AssignmentPhase, message string, now time.Time) bool {
 	if api.IsTerminalPhase(assignment.Phase) {
-		return assignment.Clone(), true
+		return false
 	}
 	assignment.Phase = phase
 	assignment.StatusMessage = message
@@ -44,8 +59,7 @@ func (s *MemoryStore) UpdateAssignmentStatus(id string, phase api.AssignmentPhas
 	if api.IsTerminalPhase(phase) {
 		assignment.FinishedAt = &now
 	}
-	s.assignments[id] = assignment
-	return assignment.Clone(), true
+	return true
 }
 
 func (s *MemoryStore) ListAssignments() []api.Assignment {

@@ -9,7 +9,7 @@ import (
 
 func (c *Controller) reconcileService(now time.Time, service api.Service) {
 	assignments := c.store.ListAssignmentsForOwner(api.WorkloadKindService, service.Name)
-	liveNodes := liveNodeSet(now, c.store.ListNodes(), c.nodeTimeout)
+	liveNodes := liveNodeSet(now, c.nodes(), c.nodeTimeout)
 
 	active := make([]api.Assignment, 0)
 	for _, assignment := range assignments {
@@ -39,7 +39,7 @@ func (c *Controller) reconcileService(now time.Time, service api.Service) {
 	}
 
 	for len(active) < service.Replicas {
-		nodeID, err := c.scheduler.ChooseNode(now, c.store.ListNodes(), c.store.ListAssignments(), service.Resources, service.Placement, service.Ports)
+		nodeID, err := c.scheduler.ChooseNode(now, c.nodes(), c.store.ListAssignments(), service.Resources, service.Placement, service.Ports)
 		if err != nil {
 			break
 		}
